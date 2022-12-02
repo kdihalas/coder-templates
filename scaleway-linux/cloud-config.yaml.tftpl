@@ -1,0 +1,46 @@
+#cloud-config
+users:
+  - name: ${username}
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    groups: sudo docker
+    shell: /bin/bash
+packages:
+  - git
+write_files:
+  - path: /opt/coder/init
+    permissions: "0755"
+    encoding: b64
+    content: ${init_script}
+  - path: /etc/systemd/system/coder-agent.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Coder Agent
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=${username}
+      ExecStart=/opt/coder/init
+      Environment=CODER_AGENT_TOKEN=${coder_agent_token}
+      Restart=always
+      RestartSec=10
+      TimeoutStopSec=90
+      KillMode=process
+
+      OOMScoreAdjust=-900
+      SyslogIdentifier=coder-agent
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null 
+  - apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - chown ${username}:${username} /home/${username}
+  - systemctl enable coder-agent
+  - systemctl start coder-agent
+  - systemctl enable docker
+  - systemctl start docker
